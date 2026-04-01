@@ -1,0 +1,124 @@
+Systemy Czasu Rzeczywistego - Laboratorium 5
+Zadanie 1 - Odpowiedzi
+========================================================
+
+PYTANIE 1: W jaki sposób w przykładzie odmierzany jest czas (podstawa czasu)?
+------------------------------------------------------------------------
+W przykładzie Alarm_Clock czas odmierzany jest za pomocą sprzętowego przerwania
+Timer0 mikrokontrolera ATmega328P, które generuje przerwanie co 1 ms (mechanizm
+millis() z Arduino). Na tej podstawie biblioteka Arduino_FreeRTOS aktualizuje
+licznik tyknięć systemowych (system tick). Domyślnie jeden tyk FreeRTOS trwa
+15 ms (configTICK_RATE_HZ ≈ 67 Hz), jednak można to zmienić w FreeRTOSConfig.h.
+
+Wątek zegara wywołuje vTaskDelayUntil() lub sprawdza upływ czasu przez
+xTaskGetTickCount(), wykrywając co sekundę moment do inkrementacji licznika sekund.
+Po 60 sekundach zwiększane są minuty, po 60 minutach – godziny (modulo 24).
+
+Zasada działania:
+  1. Timer0 generuje przerwanie co 1 ms.
+  2. W ISR FreeRTOS inkrementuje xTickCount (licznik tyknięć).
+  3. Wątek zegara porównuje aktualny xTickCount z zapisanym momentem ostatniej sekundy.
+  4. Gdy różnica >= 1000 ms (przeliczone na tyki przez pdMS_TO_TICKS), czas jest
+     inkrementowany.
+
+
+PYTANIE 2: Ile alarmów jest możliwych do ustawienia?
+------------------------------------------------------------------------
+W przykładzie Alarm_Clock możliwe jest ustawienie JEDNEGO alarmu.
+Program rezerwuje jedną parę zmiennych (godzina alarmu, minuta alarmu)
+oraz jedną flagę włączenia alarmu.
+
+
+PYTANIE 3: Jakie czynności należy wykonać, aby ustawić czas oraz alarm?
+------------------------------------------------------------------------
+Obsługa przycisków MultiFuncShield (S1, S2, S3):
+
+  Ustawianie czasu:
+    1. Nacisnąć S1 raz  → tryb ustawiania godzin (godziny migają).
+    2. S2 = godziny +1 | S3 = godziny -1.
+    3. Nacisnąć S1 drugi raz → tryb ustawiania minut (minuty migają).
+    4. S2 = minuty +1 | S3 = minuty -1.
+    5. Nacisnąć S1 trzeci raz → powrót do wyświetlania czasu (czas zapisany).
+
+  Ustawianie alarmu:
+    6. Nacisnąć S1 czwarty raz → tryb ustawiania godzin alarmu.
+    7. S2 = godziny alarmu +1 | S3 = godziny alarmu -1.
+    8. Nacisnąć S1 piąty raz → tryb ustawiania minut alarmu.
+    9. S2 = minuty alarmu +1 | S3 = minuty alarmu -1.
+   10. Nacisnąć S1 szósty raz → powrót do wyświetlania czasu (alarm zapisany).
+
+  Podczas działania alarmu:
+    S1 = wyłącz alarm
+    S2 = drzemka (20 sekund)
+
+
+PYTANIE 4: Jaki mechanizm z bibliotek FreeRTOS można wykorzystać do precyzyjnego
+           odmierzania czasu?
+------------------------------------------------------------------------
+Do precyzyjnego odmierzania czasu w FreeRTOS służy funkcja:
+
+  void vTaskDelayUntil(TickType_t *pxPreviousWakeTime,
+                       const TickType_t xTimeIncrement);
+
+Różnica względem zwykłego vTaskDelay():
+  - vTaskDelay()      – opóźnia zadanie o N tyknięć OD MOMENTU wywołania.
+                        Nie kompensuje czasu wykonania ciała pętli, przez co
+                        może powoli dryfować.
+  - vTaskDelayUntil() – opóźnia zadanie tak, aby kolejne przebudzenie nastąpiło
+                        dokładnie po xTimeIncrement tyknięciach od POPRZEDNIEGO
+                        przebudzenia. Kompensuje czas wykonania kodu, zapewniając
+                        stałą, deterministyczną częstotliwość zadania.
+
+Przykład użycia (odmierzanie sekund bez dryfu):
+
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  for (;;) {
+      vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1000));
+      sekunda++;   // wykonuje się dokładnie co 1000 ms
+  }
+
+
+PYTANIE 5: Jakie typy timerów programowych występują w bibliotekach FreeRTOS
+           i które z nich są możliwe do implementacji z wykorzystaniem płytki
+           Arduino Uno?
+------------------------------------------------------------------------
+FreeRTOS udostępnia DWA typy timerów programowych:
+
+  1. ONE-SHOT (jednorazowy)
+     - Uruchamia się raz po upłynięciu zadanego czasu.
+     - Po wygaśnięciu przechodzi w stan uśpiony (nie restartuje się).
+     - Tworzony przez: xTimerCreate(..., pdFALSE, ...)
+     - Można ręcznie wznowić przez xTimerStart().
+     - Zastosowanie: np. wyłączenie alarmu po 30 sekundach.
+
+  2. AUTO-RELOAD (cykliczny / okresowy)
+     - Automatycznie restartuje się po każdym wygaśnięciu.
+     - Uruchamia funkcję callback cyklicznie z zadanym okresem.
+     - Tworzony przez: xTimerCreate(..., pdTRUE, ...)
+     - Zastosowanie: np. pulsowanie LED co 500 ms, odmierzanie sekund.
+
+Implementacja na Arduino Uno:
+  Obydwa typy są możliwe do implementacji na Arduino Uno przy użyciu biblioteki
+  Arduino_FreeRTOS (wersja >= 9.0.0 z włączoną opcją configUSE_TIMERS = 1
+  w FreeRTOSConfig.h). Timery programowe obsługiwane są przez dedykowane zadanie
+  wewnętrzne FreeRTOS o nazwie "Tmr Svc" (Timer Service Task), które przetwarza
+  komendy timerów z kolejki xTimerQueue.
+
+  Uwaga: timery programowe FreeRTOS NIE są timerami sprzętowymi – działają
+  w kontekście zadania Timer Service, więc ich dokładność zależy od rozdzielczości
+  tyknięcia systemowego (domyślnie 15 ms na Arduino Uno) oraz priorytetu zadania
+  serwisowego. Do precyzyjnego odmierzania czasu z krokiem 1 ms należy skonfigurować
+  configTICK_RATE_HZ = 1000 w FreeRTOSConfig.h.
+
+Przykład stworzenia timera auto-reload:
+
+  TimerHandle_t xTimer = xTimerCreate(
+      "SecTimer",            // nazwa (debug)
+      pdMS_TO_TICKS(1000),   // okres: 1000 ms
+      pdTRUE,                // pdTRUE = auto-reload, pdFALSE = one-shot
+      (void *)0,             // ID timera
+      vTimerCallback         // funkcja callback
+  );
+  xTimerStart(xTimer, 0);
+
+========================================================
