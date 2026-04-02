@@ -24,9 +24,13 @@ enum displayModeValues {
 
 byte displayMode = MODE_CLOCK_TIME;
 
+void updateAlarmLed() {
+  MFS.writeLeds(LED_1, alarmEnabled ? ON : OFF);
+}
+
 void displayTime(byte hours, byte minutes) {
   char time[5];
-  sprintf(time, "%04u", (unsigned)((hours * 100u) + minutes)); // poprawka: 4 cyfry
+  sprintf(time, "%04u", (unsigned)((hours * 100u) + minutes));
   MFS.write(time, 1);
 }
 
@@ -57,14 +61,23 @@ void setup() {
   MFS.userInterrupt = clockISR;
   MFS.initialize(&Timer1);
   MFS.blinkDisplay(DIGIT_ALL);
+  updateAlarmLed();
 }
 
 void loop() {
   byte btn = MFS.getButton();
 
+  byte hoursSnapshot;
+  byte minutesSnapshot;
+
   switch (displayMode) {
     case MODE_CLOCK_TIME:
-      displayTime(clockHours, clockMinutes);
+      noInterrupts();
+      hoursSnapshot = clockHours;
+      minutesSnapshot = clockMinutes;
+      interrupts();
+      displayTime(hoursSnapshot, minutesSnapshot);
+
       if (btn == BUTTON_2_PRESSED) {
         MFS.beep(0);
         displayMode = MODE_ALARM_TIME;
@@ -78,7 +91,7 @@ void loop() {
       } else if (btn == BUTTON_3_LONG_PRESSED && !alarmTogglePressed) {
         alarmTogglePressed = true;
         alarmEnabled = !alarmEnabled;
-        MFS.writeLeds(LED_1, alarmEnabled);
+        updateAlarmLed();
       } else if (btn == BUTTON_3_LONG_RELEASE) {
         alarmTogglePressed = false;
       }
@@ -115,6 +128,7 @@ void loop() {
         MFS.blinkDisplay(DIGIT_1 | DIGIT_2);
         displayMode = MODE_ALARM_TIME_SET_HOUR;
         alarmEnabled = false;
+        updateAlarmLed();
       }
       break;
 
@@ -134,7 +148,7 @@ void loop() {
         MFS.blinkDisplay(DIGIT_3 | DIGIT_4, OFF);
         displayMode = MODE_CLOCK_TIME;
         alarmEnabled = true;
-        MFS.writeLeds(LED_1, ON);
+        updateAlarmLed();
       } else if (btn == BUTTON_3_PRESSED || btn == BUTTON_3_LONG_PRESSED) {
         alarmMinutes = (alarmMinutes + 1u) % 60u;
         displayTime(alarmHours, alarmMinutes);
