@@ -439,7 +439,7 @@ static void vClockTask(void *pvParameters)
                         alarms[i].snooze   = false;
                         alarms[i].ringing  = true;
                         Serial.print(F("ALARM ")); Serial.print(i + 1);
-                        Serial.println(F(" (po drzemica)!"));
+                        Serial.println(F(" (po drzemce)!"));
                     }
                 }
             }
