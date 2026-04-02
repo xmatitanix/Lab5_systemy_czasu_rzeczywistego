@@ -185,7 +185,7 @@ static void vClockTask(void *)
   bool alarmEnabled = false;
   bool alarmRinging = false;
 
-  bool snooze = false;
+  bool snoozeActive = false;
   uint8_t snoozeSec = 0;
 
   bool alarmTogglePressed = false;
@@ -207,17 +207,17 @@ static void vClockTask(void *)
     if (alarmRinging) {
       if (b2Press) {
         alarmRinging = false;
-        snooze = true;
+        snoozeActive = true;
         snoozeSec = 20;
-        Serial.println(F("Drzemka 20s"));
-      }
-      if (b1Press || b1Long || b2Release) {
+        Serial.println(F("Drzemka 20s (S2)"));
+      } else if (b1Press || b1Long) {
         alarmRinging = false;
-        snooze = false;
-        Serial.println(F("Alarm wylaczony"));
+        snoozeActive = false;
+        Serial.println(F("Alarm wylaczony (S1)"));
       }
     }
 
+    if (!alarmRinging)
     switch (mode)
     {
       case MODE_CLOCK_TIME:
@@ -246,7 +246,11 @@ static void vClockTask(void *)
 
       case MODE_ALARM_TIME:
         if (b2Release) mode = MODE_CLOCK_TIME;
-        else if (b1Long) mode = MODE_ALARM_TIME_SET_HOUR;
+        else if (b1Long) {
+          mode = MODE_ALARM_TIME_SET_HOUR;
+          alarmEnabled = false;
+          snoozeActive = false;
+        }
         break;
 
       case MODE_ALARM_TIME_SET_HOUR:
@@ -275,16 +279,16 @@ static void vClockTask(void *)
           h = (uint8_t)((h + 1u) % 24u);
         }
 
-        if (alarmEnabled && !alarmRinging && !snooze && h == alH && m == alM) {
+        if (alarmEnabled && !alarmRinging && !snoozeActive && h == alH && m == alM) {
           alarmRinging = true;
           Serial.println(F("ALARM!"));
         }
       }
 
-      if (snooze && snoozeSec > 0u) {
+      if (snoozeActive && snoozeSec > 0u) {
         snoozeSec--;
         if (snoozeSec == 0u) {
-          snooze = false;
+          snoozeActive = false;
           alarmRinging = true;
           Serial.println(F("ALARM! (po drzemce)"));
         }
@@ -292,7 +296,8 @@ static void vClockTask(void *)
     }
 
     DisplayMsg_t msg;
-    msg.dot = ((xNow % pdMS_TO_TICKS(1000)) < pdMS_TO_TICKS(500));
+    const TickType_t elapsedInSecond = xNow - xLastSec;
+    msg.dot = (elapsedInSecond < pdMS_TO_TICKS(500));
     msg.buzzer = alarmRinging;
 
     switch (mode)
